@@ -1,0 +1,268 @@
+---
+title: "Titanic"
+author: "Achraf cherkaoui"
+date: "11/29/2021"
+output:
+ pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**\color{red}{Classification:}**
+
+In this classification setting, we use a Titanic data set,it is a subset of a data set from https://www.kaggle.com/c/titanic.
+The Titanic data set contains information of 891 passenger with 11 variables (survived,Name,Pclass , Sex , Age , SibSp , Parch , Fare ,Embarked ,ticket, cabin). We will use this data in order to create a model that can predict if passengers are going to survive or not, using two different classifications method logistic regression and linear discriminant analysis.
+
+**\color{red}{data description:}**
+
+survived  ==> 
+there are two levels 0 means the passanger did not survived and 1 means that the passenger did survive.
+0 = No, 1 = Yes.
+
+pclass ==>	Ticket class,
+there are three levels 1 means the firs class, 2 means the second class , 3 means the third class. 
+1 = 1st, 2 = 2nd, 3 = 3rd
+
+sex ==> Sex(gender)
+male or female 
+
+Age	==> Age in years.	
+
+sibsp	==> number of siblings or spouses aboard the Titanic.	
+
+parch	==> number of parents or children aboard the Titanic.
+
+ticket ==>	Ticket number.	
+
+fare ==> Passenger fare.
+
+cabin	==> Cabin number.	
+
+embarked ==>	Port of Embarkation.
+there are tree levels: C = Cherbourg, Q = Queenstown, S = Southampton.
+
+
+First we remove the missing values from our data in order to make our study easier. since the cabin column has a lot of missing values we are going to remove this column from the data, also we remove the missing values for Age and embarked. 
+
+Then we split the data into training and test set. The training set should be used to build our machine learning models. in other words we are going to create a model based on our training data then we test our model on the test data.The test set should be used to see how well our model performs on unseen data.For each passenger in the test set, we use the model that we trained to predict whether or not they survived the sinking of the Titanic.
+
+```{r}
+library(readxl)
+library(MASS)
+library(GGally)
+library(ggplot2)
+library(pROC)
+t <- read_excel("traintitanic.xlsx") 
+#cleaning data 
+tt <- t[,-11] # since the cabin column has many missing values we are going to take it out from our data. 
+sum(is.na(tt))
+sum(is.na(tt$Embarked))
+twm <- na.omit(tt) # take out the missing values in age and embarked
+sum(is.na(twm))
+twm<- twm[,-4]
+twm <-twm [,-8]
+View(twm)
+
+attach(twm)
+
+## split the data into train and test data 
+n<- nrow(twm)
+set.seed(123) # change the seed to your favorite number
+reorder = sample(1:n) # shuffle
+test = twm[reorder[1:(n/2)],]
+train = twm[reorder[((n/2)+1):n],]
+
+Survived <- as.factor(Survived)
+Pclass <- as.factor(Pclass)
+Sex <- as.factor(Sex)
+Embarked <- as.factor(Embarked)  
+
+tw <-twm[,-4]
+tm<- tw[,-8]         
+ggpairs(tm)
+```
+
+
+
+### 1) Logistic regression:
+The logistic regression is a predictive analysis.  Logistic regression is used to describe data and to explain the relationship between one dependent binary variable and one or more nominal, ordinal, interval independent variables.It's used to calculate the likelihood of a given class or event, such as pass/fail, win/lose, alive/dead, or healthy/sick, occurring.
+
+**\color{red}{advantages}**
+
+Logistic regression is easier to implement, interpret, and very efficient to train.also it can interpret model coefficients as indicators of feature importance.
+
+**\color{red}{disadvantages}**
+
+The major limitation of Logistic Regression is the assumption of linearity between the dependent variable and the independent variables.Besides that,Logistic Regression requires average or no multicollinearity between independent variables.also it needs that independent variables are linearly related to the log odds (log(p/(1-p)).
+```{r} 
+twml <- glm( data = train ,  Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked , family = "binomial" )
+summary(twml) 
+```
+**\color{blue}{comment}**After fitting the logistic regression in the training set we can see that some variables are not significant in our model.Hence, we will take parch, fare, embarked off our model because there p-value is less than 0.05.
+
+```{r} 
+# forward stepwise
+start <- glm(Survived~1 , data=train)
+end <- glm(Survived~Pclass + Sex + Age + SibSp + Parch + Fare + Embarked ,data = train)
+step.model <- step(start, direction = "forward" , scope = formula(end))
+summary(step.model)
+#backward stepwise
+Bstep.model <- step(end, direction = "backward" , scope = formula(start))
+summary(Bstep.model)
+# both stepwise
+bothstep.model <- step(start, direction = "both" , scope = formula(end))
+summary(bothstep.model)
+```
+
+
+
+```{r}
+#prediction 
+twm.pred<- predict(step.model,newdata = test ,type="response")
+twm.pred
+twml.pred.test <- ifelse(twm.pred > 0.5 , 1,0)
+twml.pred.test
+```
+
+
+```{r}
+#confusion matrix 
+twm.table <- table(test$Survived,twml.pred.test )
+twm.table
+```
+
+```{r}
+sensitivity <- (93/(93+45))*100
+specificity <- (183/(183+35))*100
+sensitivity
+specificity
+testerrorrate <- ((45+35)/(183+35+45+93))*100
+testerrorrate
+```
+
+```{r}
+#area under the curve
+
+twm.roc <- roc(test$Survived, twml.pred.test,legacy.axes=TRUE)
+ggroc(twm.roc)+theme_bw(28) 
+auc(twm.roc)
+
+```
+
+**\color{blue}{comment}** The area under the curve is between 0.8 and 0.7 witch means that the model is a good fit for our data.
+
+
+
+
+### 2) LDA (linear discriminant analysis): 
+linear discriminant analysis is used to find a linear combination of features that characterizes or separates two or more classes of objects or events. The resulting combination may be used as a linear classifier, or, more commonly, for dimensionality reduction before later classification. 
+
+**\color{red}{advantages}**
+
+It is unbias, simple, fast and easy to implement. 
+
+**\color{red}{disadvantages}**
+
+It requires normal distribution assumption on features/predictors and Sometimes not good for few categories variables.
+```{r}
+LDA.twm <- lda(Survived~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked , data = train)
+LDA.twm
+
+```
+
+```{r } 
+#Prediction 
+la.pre <- predict(LDA.twm ,test)
+la.pre
+```
+
+
+```{r}
+#confusion matrix 
+la.class <- la.pre$class
+table(test$Survived ,la.class )
+
+```
+
+```{r}
+sensitivity <- (94/(94+44))*100
+specificity <- (180/(180+38))*100
+sensitivity
+specificity
+testerrorrate <- ((44+38)/(180+38+44+94))*100
+testerrorrate
+```
+**\color{blue}{conclusion}** comparing the logistic regression and LDA we find that the test error rate for the logistic regression 22.47 is less than the LDA test error rate 23.03 meaning that the logistic regression is slightly more accurate than the LDA by 0.56.Moreover the AUC confirm that the logistic regression model is a good model to our data.Therefore,the best model that will be a a good fit to our data is the logistic regression.Forward selection, Backward selection and Stepwise selection give the same result estimating that our model will include 4 variables (Survived = Sex + Pclass + Age + SibSp), in other words the prediction of a passenger survival is essentially explained based on these 4 variables which are :the gender of the person male or female, the ticket class if it is first , second or third class, the age of the person , and finally if you have any family member aboard the ship). 
+ 
+ 
+**\color{red}{Final Model}**
+
+### Now we fit our logistic regression model to the whole data: 
+```{r}
+final.model<- glm( data = twm ,  Survived ~ Pclass + Sex + Age + SibSp  , family = "binomial" )
+summary(final.model)  
+?as.formula
+
+```
+***\color{blue}{comment}*** interpretation  of the estimates of 𝛽1 ,𝛽2,𝛽3 and 𝛽4 .
+
+𝛽1= -1.31392, then e𝛽1 = 0.26877 and the interpretation becomes: An increase of one unite in Pclass multiplies the odds of class 1 by 0.26877.meaning that an increase of one unite in Pclass is associated with an decrease of 73.12% in the odds of class 1. decreases by 73.12% (0.26877 - 1 = 0.5386).
+
+
+𝛽2= -2.61477, then e𝛽 = 0.07318 and the interpretation becomes: An increase of one unite in sex multiplies the odds of class 1 by 0.07318.meaning that an increase of one unite in sex is associated with an decrease of 92.68% in the odds of class 1. decreases by 92.68% (0.07318 - 1 = -0.9268).
+
+𝛽3= -0.04459, with one unite increase in Age leads to a decreases of 0.04459 in the log-odds of class 1.
+𝛽3= -0.04459, then e𝛽3 = 0.9564 and the interpretation becomes: An increase of one unite in Age multiplies the odds of class by 0.9564. an increase of one unite in Age is associated with a decrease of 4.36% in the odds of class 1. 
+decreases by 4.36.8% (0.9564 - 1 = -0.0436).
+
+𝛽4= -0.37465, with one unite increase in number of siblings  leads to a decreases of 0.37465 in the log-odds of class 1.
+𝛽4= -0.37465, then e𝛽4 = 0.6875 and the interpretation becomes: An increase of one unite in number of siblings  multiplies the odds of class by 0.6875. an increase of one unite in number of siblings is associated with a decrease of 31.25% in the odds of class 1.decreases by 31.25% (0.6875 - 1 = -0.3125).
+
+ 
+***\color{blue}{comment}*** Based on this model we see that men have less chances to survive a Titanic sinking compared to women.in other words if we remain all the other variable constant there is 92.68% chances that a woman might survive the Titanic sinking compared to a man.
+
+```{r} 
+library(plotly)
+m <- twm%>%
+        filter(Survived == "1" , Sex == "male")
+mn <- nrow(m)
+mn 
+print("93 of men survived Titinc sinking")
+w <- twm%>%
+        filter(Survived == "1" , Sex == "female")
+wn <- nrow(w)
+wn 
+print("195 of women survived Titinc sinking")
+d <- data.frame(game = c("female survived", "man survived" ),
+                number=c(wn, mn))
+pi <- plot_ly(data = d, labels = ~game, values = ~number, 
+                type = 'pie', sort= FALSE,
+                marker= list(colors=colors, line = list(color="black", width=1))) %＞%
+  layout(title="Pie chart : Number of passanger survived ")
+pi
+```
+
+```{r}
+m1 <- twm%>%
+        filter(Survived == "0" , Sex == "male")
+mn1 <- nrow(m1)
+mn1 
+print("360 of men did not survive Titinc sinking")
+w1 <- twm%>%
+        filter(Survived == "0" , Sex == "female")
+wn1 <- nrow(w1)
+wn1 
+print("64 of women did not survive Titinc sinking")
+d1 <- data.frame(game = c("female did not survive", "man did survive " ),
+                number=c(wn1, mn1))
+pi1 <- plot_ly(data = d1, labels = ~game, values = ~number, 
+                type = 'pie', sort= FALSE,
+                marker= list(colors=colors, line = list(color="black", width=1))) %＞%
+  layout(title="Pie chart : Number of passanger did not survive ")
+pi1
+
+```
+
